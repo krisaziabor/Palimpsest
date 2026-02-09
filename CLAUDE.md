@@ -1,8 +1,8 @@
-# Claude Code Context: Constellating – A Friction Tool for Design Research
+# Claude Code Context: Palimpsest – A Friction Tool for Design Research
 
 ## What This Is
 
-Constellating is a macOS app that governs how I collect and process design inspiration. It uses Are.na as its source platform and enforces a core rule: **you cannot save anything without first speaking about it.** The tool refuses to let me accumulate without processing. Collecting is not research. Saving is not thinking.
+Palimpsest is a macOS app that governs how I collect and process design inspiration. It uses Are.na as its source platform and enforces a core rule: **you cannot save anything without first speaking about it.** The tool refuses to let me accumulate without processing. Collecting is not research. Saving is not thinking.
 
 This is a personal tool — I am the sole user. Accessibility is considered but not prioritized for broad audiences.
 
