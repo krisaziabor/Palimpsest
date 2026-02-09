@@ -1,12 +1,12 @@
 import Foundation
 
-public struct ArenaBlock: Codable {
+public struct ArenaBlock: Codable, Hashable {
     public let id: Int
     public let title: String?
     public let source: BlockSource?
     public let blockClass: String?
 
-    public struct BlockSource: Codable {
+    public struct BlockSource: Codable, Hashable {
         public let url: String?
     }
 
@@ -15,6 +15,15 @@ public struct ArenaBlock: Codable {
         case title
         case source
         case blockClass = "class"
+    }
+
+    // Implement Hashable to support Set operations for deduplication
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    public static func == (lhs: ArenaBlock, rhs: ArenaBlock) -> Bool {
+        lhs.id == rhs.id
     }
 }
 

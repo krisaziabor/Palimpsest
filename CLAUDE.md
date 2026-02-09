@@ -1,197 +1,197 @@
-# Claude Code Context: Constellating v1 - Are.na Search Tool
+# Claude Code Context: Constellating – A Friction Tool for Design Research
 
-## Project Vision
+## What This Is
 
-I'm building "Constellating" - a macOS app that helps designers discover connections between their inspirations using Are.na's community-curated collections. Version 1 focuses solely on the Are.na search functionality. The name represents the ongoing action of connecting design elements to form larger creative constellations.
+Constellating is a macOS app that governs how I collect and process design inspiration. It uses Are.na as its source platform and enforces a core rule: **you cannot save anything without first speaking about it.** The tool refuses to let me accumulate without processing. Collecting is not research. Saving is not thinking.
 
-## Current Development Focus (v1)
+This is a personal tool — I am the sole user. Accessibility is considered but not prioritized for broad audiences.
 
-- [x] Project structure setup
-- [ ] Are.na API integration
-- [ ] SQLite caching system
-- [ ] Search flow implementation
-- [ ] URL/Channel dual view
-- [ ] Channel preview cards
-- [ ] Rate limit handling
-- [ ] Cache management (6-month freshness)
+## Core Interaction Loop
 
-## Are.na API Workflow
+1. Search Are.na by URL → discover blocks, channels, and related URLs
+2. Browse results at full fidelity
+3. To save any source: **record a voice response** (transcribed automatically)
+4. Saved sources enter a personal collection with audio + transcription attached
+5. After 7 days, sources **degrade** — only blurred/pixelated thumbnails + audio remain
+6. Every Sunday: **ritual transfer** of full-fidelity originals to a physical hard drive
+7. If Sunday transfer is skipped, the app **locks new discovery** until completed
+8. Post-transfer: app shows only degraded thumbnails, transcriptions, and a pointer to which physical drive holds the original
 
-### Complete Search Process
+## The Argument
 
-1. Input: [https://example.com/blog/post](https://example.com/blog/post)
-2. Strip to domain: "example"
-3. Search blocks: GET /v2/search/blocks?q=example&page=1...n
-4. For each matching block (check .blocks[].source.url):
-    - GET /v2/blocks/{id}/channels?page=1...n
-5. For each channel found:
-    - GET /v2/channels/{slug}/contents
-    - Extract all class:"Link" blocks
-    - Count URL occurrences
-6. Present ranked results
+The tool demands more from the user (voice, ritual, physical storage). It makes infrastructure tangible (hard drives). It inserts the body (speaking, handling objects). It refuses to scale conveniently. Time degrades sources so they cannot be directly copied — only remembered through your own spoken reactions. The real archive is your evolving thinking, not a pile of bookmarks.
 
-### URL Matching Rules
+## Technology Stack
 
-- **Strip URL**: Extract domain name only (example.com → example)
-- **Flexible Matching**: Accept www/no-www, http/https
-- **Inexact Matches**: Flag URLs with extra path segments
-- **Example**: Searching "example.com" matches:
-  - ✅ Exact: <https://example.com>, <http://www.example.com>
-  - ⚠️ Inexact: <https://example.com/blog/post>
+- **Platform**: macOS native app
+- **Language**: Swift 5.9+
+- **UI Framework**: SwiftUI
+- **Audio Recording**: AVAudioRecorder / AVAudioEngine
+- **Speech Transcription**: Apple Speech framework (SFSpeechRecognizer) — on-device
+- **Database**: SQLite (searches, blocks, channels, saved collection, recordings)
+- **Networking**: URLSession with async/await
+- **Architecture**: MVVM
 
-### API Details
+## Are.na API Integration
 
-- **Base URL**: <https://api.are.na/v2>
-- **Auth**: None required for GET requests
-- **Rate Limit**: 60 requests/minute
-- **Pagination**: Check `total_pages` in responses
+### Endpoints
 
-### Channel Preview Data
+- `GET /v2/search/blocks?q=QUERY&page=X` — search blocks by stripped domain
+- `GET /v2/blocks/{id}/channels?page=X` — find channels containing a block
+- `GET /v2/channels/{slug}/contents` — get all blocks in a channel
+- `GET /v2/channels/{slug}/thumb` — channel preview metadata
+- `GET /v2/channels/{slug}/connections?page=X` — connected channels
 
-When hovering a channel, fetch:
+### Rules
 
-GET /v2/channels/{slug}/thumb → title, user.full_name, length GET /v2/channels/{slug}/connections → connection count First 6 thumbnails from contents[].image.thumb.url
+- No auth required for GET requests
+- Rate limit: 60 requests/minute — implement queuing
+- Cache aggressively to minimize API calls
+- Skip private channels silently on 401
+- Paginate with `total_pages` from responses
 
-## Business Rules
+### URL Matching
 
-### Caching
+- Strip input URL to domain name (`https://example.com/page` → `example`)
+- Accept www/no-www, http/https variations
+- Flag URLs with extra path segments as "inexact"
+- Deduplicate within channels, sum occurrences across channels for ranking
 
-- **Fresh**: < 6 months old
-- **Stale**: > 6 months old (show warning, auto-refresh unless user opts out)
-- **Re-index**: User can manually trigger anytime
+## Voice Recording System
 
-### Large Channel Handling
+### Recording Flow
 
-- Fetch first 50 URLs automatically
-- Show "Load more" option for channels with more content
-- User controls continued fetching
+1. User taps/clicks a source to save it
+2. Recording panel appears — save button is **disabled** until recording completes
+3. User speaks their reaction (no minimum length, but must record *something*)
+4. On stop: audio saved locally, transcription runs via SFSpeechRecognizer
+5. Transcription displayed for review
+6. Source + audio file path + transcription text saved to collection
 
-### Error Handling
+### Technical Notes
 
-- **401 Unauthorized**: Skip private channels silently
-- **Rate Limit**: Queue requests, show progress
-- **Network Errors**: Fall back to cached data if available
+- Use `AVAudioRecorder` for recording, save as `.m4a`
+- Use `SFSpeechRecognizer` with on-device recognition (no network required)
+- Store audio files in app's documents directory
+- Store transcription as text in SQLite alongside the source reference
+- Request microphone + speech recognition permissions on first use
 
-### Duplicate Prevention
+## Collection & Degradation
 
-- Within a single channel, count each unique URL only once
-- Across channels, sum occurrences for ranking
+### Saved Items Store
+
+Each saved item contains:
+- Reference to the original Are.na block/channel/URL
+- Audio file path
+- Transcription text
+- Date saved
+- Degradation status (fresh / degraded)
+- Hard drive pointer (post-transfer)
+
+### Time-Based Degradation (7 days after save)
+
+- Original image replaced with heavily pixelated/blurred version (apply CIFilter gaussian blur or pixelation)
+- Audio recording and transcription remain at full fidelity
+- The degraded thumbnail is a trigger, not a reference — you can't pull details from it
+
+### Sunday Ritual
+
+- Every Sunday: app prompts transfer of full-fidelity originals to external drive
+- Transfer = export original images/data to user-selected drive location
+- After transfer: app records which drive received which items
+- If transfer is skipped: app locks the search/discovery features until completed
+- The lockout isn't punitive — the tool refuses to let you accumulate more until you've dealt with what you have
 
 ## Database Schema
 
 ```sql
--- Core tables for v1
-searches → Track search history and cache age
-blocks → Store Are.na block data
-channels → Cache channel metadata
-block_channels → Many-to-many relationships
-channel_urls → URLs found in channels with occurrence counts
+-- Search history and cache
+CREATE TABLE searches (
+    id INTEGER PRIMARY KEY,
+    original_url TEXT NOT NULL,
+    stripped_domain TEXT NOT NULL,
+    searched_at DATETIME NOT NULL
+);
+
+-- Are.na blocks from search results
+CREATE TABLE blocks (
+    id INTEGER PRIMARY KEY,
+    arena_block_id TEXT UNIQUE,
+    source_url TEXT,
+    title TEXT,
+    image_url TEXT,
+    is_exact_match BOOLEAN DEFAULT 1
+);
+
+-- Are.na channels
+CREATE TABLE channels (
+    id INTEGER PRIMARY KEY,
+    slug TEXT UNIQUE,
+    title TEXT,
+    username TEXT,
+    block_count INTEGER
+);
+
+-- Block-Channel relationships
+CREATE TABLE block_channels (
+    block_id INTEGER,
+    channel_id INTEGER,
+    FOREIGN KEY (block_id) REFERENCES blocks(id),
+    FOREIGN KEY (channel_id) REFERENCES channels(id)
+);
+
+-- URLs discovered in channels
+CREATE TABLE channel_urls (
+    channel_id INTEGER,
+    url TEXT,
+    is_exact_match BOOLEAN DEFAULT 1,
+    occurrence_count INTEGER DEFAULT 1,
+    FOREIGN KEY (channel_id) REFERENCES channels(id)
+);
+
+-- THE COLLECTION: saved sources with voice recordings
+CREATE TABLE collection (
+    id INTEGER PRIMARY KEY,
+    source_type TEXT NOT NULL, -- 'block', 'channel', or 'url'
+    source_id TEXT NOT NULL, -- reference to blocks.id, channels.id, or raw URL
+    source_title TEXT,
+    source_url TEXT,
+    original_image_url TEXT,
+    audio_file_path TEXT NOT NULL,
+    transcription TEXT NOT NULL,
+    saved_at DATETIME NOT NULL,
+    is_degraded BOOLEAN DEFAULT 0,
+    degraded_at DATETIME,
+    drive_label TEXT, -- which physical drive holds the original
+    transferred_at DATETIME
+);
 ```
-
-## Code Architecture
-
-### Key Services
-
-swift
-
-```swift
-// API communication with rate limiting
-class ArenaAPIService {
-    func searchBlocks(query: String) async throws -> [Block]
-    func getBlockChannels(blockId: String) async throws -> [Channel]
-    func getChannelContents(slug: String) async throws -> [URL]
-}
-
-// Cache management
-class CacheManager {
-    func getCachedSearch(url: String) -> CachedSearch?
-    func isStale(search: CachedSearch) -> Bool
-    func saveSearch(url: String, results: SearchResults)
-}
-
-// URL processing
-class URLProcessor {
-    func stripToDomain(url: URL) -> String
-    func compareURLs(_ url1: String, _ url2: String) -> MatchResult
-}
-```
-
-### View Models
-
-```swift
-class SearchViewModel: ObservableObject {
-    @Published var searchResults: SearchResults?
-    @Published var isLoading: Bool = false
-    @Published var viewMode: ViewMode = .urls // .urls or .channels
-    
-    func search(url: String) async
-    func reindex(url: String) async
-    func loadMoreResults(for channel: Channel) async
-}
-```
-
-## UI Components
-
-### Main Views
-
-1. **SearchView**: Input field, search button, re-index option
-2. **ResultsView**: Toggle between URL/Channel views
-3. **ChannelPreviewCard**: Hover state with metadata
-4. **ProgressView**: Beautiful loading states
-
-### Channel Actions
-
-- **Click**: Open in browser
-- **Context Menu**:
-  - View inner channels (contents)
-  - View outer channels (connections)
-
-## Common Queries for Claude
-
-1. **API Integration** "Help me implement pagination handling for Are.na API calls with rate limiting"
-2. **URL Processing** "Create a URL matching system that handles www/protocol variations and detects path differences"
-3. **Caching Logic** "Implement 6-month cache staleness checking with user-controlled refresh"
-4. **UI Components** "Build a channel preview card that loads thumbnails lazily"
-5. **Database Queries** "Write efficient SQL to get ranked URLs by occurrence across channels"
 
 ## Current Priorities
 
-1. Get basic search flow working end-to-end
-2. Implement proper rate limiting
-3. Build out caching system
-4. Create beautiful UI with smooth animations
-5. Handle edge cases (private channels, large datasets)
+1. **Voice-to-save gate** — the core interaction that enforces the tool's thesis
+2. **Collection view** — showing saved items with transcriptions
+3. **Degradation system** — time-based blur after 7 days
+4. **Sunday ritual interface** — transfer flow and lockout
+5. **Drive pointer system** — tracking which drive holds which originals
+6. UI polish and animation
 
-## Code Quality Commands
+## Code Quality
 
-**IMPORTANT**: After making any code changes, always run these commands before building:
+After any changes, always run:
 
 ```bash
-# Format code with SwiftFormat
 swiftformat .
-
-# Check for linting issues
 swiftlint
 ```
 
-### Code Quality Guidelines
+Fix all SwiftLint violations before committing.
 
-- When you do swiftlint and see violations, fix them and run the command again until the violations are all gone.
+## Design Principles
 
-## Remember
-
-- v1 is Are.na search only (no Eagle/Sanity/mobile yet)
-- Cache aggressively - API calls are expensive
-- Make loading states beautiful and informative
-- Handle errors gracefully
-- "Inexact" matches need clear visual indication
-- User controls the experience (refresh, load more, etc.)
-
-## Future v2 Features (Not Current Focus)
-
-- Eagle integration
-- Sanity CMS sync
-- iOS/iPadOS helper apps
-- Safari extension
-- Script automation with beautiful logging
-
+- Every feature should be minimal but exceptional
+- Keyboard-first, mouse-optional
+- Dark mode optimized
+- Loading states should be beautiful and informative
+- The friction is intentional — do not optimize it away
+- Voice interaction should feel natural, not punitive

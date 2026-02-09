@@ -1,211 +1,136 @@
-# Project: Constellating - Design Research Constellation Builder (v1)
+# Project: Constellating – A Friction Tool for Design Research
 
 ## Project Philosophy
-"Constellating" represents the action of connecting design inspirations to form larger creative entities. This is a research/ideation tool that helps designers discover connections between their inspirations through Are.na's community-curated collections. The name ends in "ING" to emphasize the ongoing action of making connections.
 
-## Version 1 Focus: Are.na Search Tool
-This version focuses exclusively on the Are.na connection discovery tool. Future versions will add Eagle integration, Sanity CMS sync, and mobile helper apps.
+Constellating enforces an ethics of attention on design research. The tool's core argument: collecting is not research, saving is not thinking. It uses Are.na as a source platform and requires the user to **speak their reaction** before saving any source. Voice responses are transcribed and become the primary archive — your own evolving thinking, not a pile of bookmarks.
 
-## Core Feature: Are.na Connection Discovery
-
-### Search Flow
-1. User inputs a URL
-2. Strip to domain name (e.g., `https://example.com/page` → `example`)
-3. Search Are.na blocks for matches
-4. Find all channels containing matching blocks
-5. Analyze all URLs within those channels
-6. Rank URLs by occurrence frequency across channels
-7. Present both URL and Channel views
-
-### Key Business Rules
-- **URL Matching**: Accept www/no-www and http/https variations
-- **Inexact Matches**: Mark URLs with extra path segments as "inexact"
-- **Cache Validity**: 6 months (auto-refresh after, unless user opts out)
-- **Duplicate Handling**: Skip duplicate URLs within single channel
-- **Large Channels**: Limit to first 50 URLs, then require user continuation
-- **Private Channels**: Skip on 401 error
-- **Rate Limiting**: Implement request queuing and throttling
+Sources degrade over time (blurred after 7 days), must be transferred to physical hard drives weekly, and the app locks discovery if the ritual is skipped. The friction is the feature.
 
 ## Technology Stack
+
 - **Platform**: macOS native app
 - **Language**: Swift 5.9+
 - **UI Framework**: SwiftUI
-- **Database**: SQLite for caching search results
+- **Audio**: AVAudioRecorder (recording), SFSpeechRecognizer (on-device transcription)
+- **Database**: SQLite
 - **Networking**: URLSession with async/await
-- **Architecture**: MVVM with Combine
+- **Architecture**: MVVM
+
+## Core Interaction: Voice-to-Save Gate
+
+This is the most important feature. **Nothing can be saved without a voice recording.**
+
+1. User browses Are.na search results (blocks, channels, URLs)
+2. Tapping "save" on any result opens a recording panel
+3. Save button stays **disabled** until recording + transcription completes
+4. Audio saved as `.m4a`, transcription stored as text in SQLite
+5. Only then does the source enter the user's collection
+
+### Implementation Notes
+
+- `AVAudioRecorder` for capture, save to app documents directory
+- `SFSpeechRecognizer` with on-device recognition (no network dependency)
+- Request microphone + speech recognition permissions gracefully
+- No minimum recording length, but must record *something* (non-zero duration)
+- Display transcription after recording stops, before final save
 
 ## Are.na API Integration
 
-### Endpoints Used
+### Search Flow
 
-GET /v2/search/blocks?q=TITLE&page=X GET /v2/blocks/BLOCK_ID/channels?page=X GET /v2/channels/SLUG/contents GET /v2/channels/SLUG/thumb GET /v2/channels/SLUG/connections?page=X
+1. User inputs a URL
+2. Strip to domain name (`https://example.com/page` → `example`)
+3. Search Are.na blocks: `GET /v2/search/blocks?q=QUERY&page=X`
+4. Find channels for matching blocks: `GET /v2/blocks/{id}/channels?page=X`
+5. Analyze URLs within channels: `GET /v2/channels/{slug}/contents`
+6. Rank discovered URLs by occurrence frequency
+7. Present results in collapsible sections (Blocks, Channels, Other Websites)
 
-### No Authentication Required
-- All endpoints are public GET requests
-- No API token needed for v1
+### API Rules
 
-### Rate Limit Handling
-- 60 requests per minute limit
-- Implement request queue with throttling
-- Show progress during long operations
-- Cache aggressively to minimize repeated calls
+- Base URL: `https://api.are.na/v2`
+- No auth required for GET requests
+- Rate limit: 60 req/min — queue and throttle
+- Paginate using `total_pages` from responses
+- Skip private channels on 401
+- Cache aggressively
 
-## Database Schema
+### URL Matching
 
-``````sql
--- Search history
-CREATE TABLE searches (
-    id INTEGER PRIMARY KEY,
-    original_url TEXT NOT NULL,
-    stripped_domain TEXT NOT NULL,
-    searched_at DATETIME NOT NULL,
-    is_stale BOOLEAN DEFAULT 0
-);
+- Accept www/no-www, http/https variations
+- Flag extra path segments as "inexact"
+- Deduplicate within channels, sum across channels
 
--- Cached blocks
-CREATE TABLE blocks (
-    id INTEGER PRIMARY KEY,
-    arena_block_id TEXT UNIQUE,
-    source_url TEXT,
-    title TEXT,
-    is_exact_match BOOLEAN DEFAULT 1
-);
+## Collection & Degradation
 
--- Cached channels
-CREATE TABLE channels (
-    id INTEGER PRIMARY KEY,
-    slug TEXT UNIQUE,
-    owner_slug TEXT,
-    title TEXT,
-    username TEXT,
-    block_count INTEGER,
-    connection_count INTEGER,
-    thumbnail_urls TEXT -- JSON array of first 6
-);
+### Saved Items
 
--- Block-Channel relationships
-CREATE TABLE block_channels (
-    block_id INTEGER,
-    channel_id INTEGER,
-    FOREIGN KEY (block_id) REFERENCES blocks(id),
-    FOREIGN KEY (channel_id) REFERENCES channels(id)
-);
+Each collected source stores:
+- Source reference (block/channel/URL + metadata)
+- Audio file path (`.m4a`)
+- Transcription text
+- Save date
+- Degradation status + date
+- Hard drive pointer (post-transfer)
 
--- URLs found in channels
-CREATE TABLE channel_urls (
-    channel_id INTEGER,
-    url TEXT,
-    is_exact_match BOOLEAN DEFAULT 1,
-    occurrence_count INTEGER DEFAULT 1,
-    FOREIGN KEY (channel_id) REFERENCES channels(id)
-);
-```
-``````
+### Time-Based Degradation (7 days after save)
 
-## UI Components
+- Replace original image with heavily blurred/pixelated version (CIFilter)
+- Audio and transcription remain untouched
+- The degraded image is a memory trigger, not a usable reference
 
-### Main Search View
+### Sunday Ritual
 
-- URL input field
-- Search/Re-index buttons
-- Progress indicator during search
-- Toggle between URL and Channel views
+- Weekly prompt to transfer originals to external hard drive
+- App records which drive received which items
+- If skipped: search/discovery features lock until transfer completes
+- Post-transfer: only degraded thumbnails + audio + transcriptions remain in app
 
-### Results Views
+## Database
 
-1. **URL View**: Ranked list of discovered URLs with occurrence counts
-2. **Channel View**: List of channels containing the searched URL
+### Key Tables
 
-### Channel Preview (Hover)
+- `searches` — search history and cache
+- `blocks` — Are.na block data from search results
+- `channels` — Are.na channel metadata
+- `block_channels` — many-to-many relationships
+- `channel_urls` — discovered URLs with occurrence counts
+- `collection` — **saved sources with voice recordings, transcriptions, degradation status, and drive pointers**
 
-- Title and username
-- Block count
-- Connection count
-- 6 thumbnail gallery
-- "Inexact match" indicator if applicable
+## UI Structure
 
-### Channel Actions (Context Menu)
+### Views
 
-- Open in browser
-- View inner channels (contents)
-- View outer channels (connections)
+1. **Search View**: URL input → Are.na search → collapsible results (Blocks, Channels, Other Websites)
+2. **Recording Panel**: Appears when saving — mic button, waveform/indicator, stop, transcription display, confirm save
+3. **Collection View**: Saved sources with transcription text, audio playback, degradation state
+4. **Sunday Ritual View**: Transfer prompt, drive selection, progress, confirmation
+5. **Degraded State**: Blurred thumbnail + transcription + "Drive B, transferred Jan 12" pointer
 
-## Code Patterns
+### Design Principles
 
-### URL Processing
-
-```swift
-func stripToDomainn(from url: URL) -> String {
-    // Extract just the domain name
-    // example.com → example
-}
-
-func urlsMatch(_ url1: String, _ url2: String) -> (matches: Bool, isExact: Bool) {
-    // Compare URLs flexibly
-    // Handle www, protocol differences
-    // Detect path segment differences
-}
-```
-
-### API Request Management
-
-swift
-
-```swift
-class ArenaAPIQueue {
-    // Throttle to 60 requests/minute
-    // Queue requests
-    // Handle pagination automatically
-}
-```
-
-### Cache Management
-
-swift
-
-```swift
-func getCacheStatus(for url: String) -> CacheStatus {
-    // .fresh (< 6 months)
-    // .stale (> 6 months)
-    // .notCached
-}
-```
-
-## Error Handling
-
-- Network failures: Show offline mode with cached data
-- Rate limits: Queue and retry with progress indication
-- Private channels: Skip silently, log for debugging
-- Large datasets: Paginate with user control
-
-## Performance Considerations
-
-- Lazy load channel thumbnails
-- Virtualized lists for large result sets
-- Background processing for API calls
-- Efficient SQL queries with proper indexing
-
-## Visual Design Notes
-
-- Constellation metaphors throughout
+- Keyboard-first, mouse-optional
 - Dark mode optimized
+- Minimal but exceptional
 - Beautiful loading states
-- Smooth animations for state transitions
-- Clear visual hierarchy for results
+- **The friction is intentional — never optimize it away**
+- Voice interaction should feel natural, not punitive
 
-## Testing Scenarios
+## Code Quality
 
-- URLs with various formats (www, https, paths)
-- Channels with 1000+ blocks
-- Rate limit handling
-- 6+ month old cached data
-- Network interruptions
-- Private channel encounters
+Always run after changes:
 
-## Future v2 Additions (Not in Current Scope)
+```bash
+swiftformat .
+swiftlint
+```
 
-- Eagle integration for local design library
-- Sanity CMS sync
-- iOS/iPadOS helper apps
-- Safari extension
-- Beautiful script execution logging
+Fix all SwiftLint violations before committing.
+
+## What NOT to Build
+
+- Do not add quick-save or save-without-recording shortcuts
+- Do not add a way to bypass the Sunday transfer lockout
+- Do not auto-preserve full-fidelity images past the degradation window
+- Do not add Eagle, Sanity, or mobile features (future scope)
+- The constraints are the product — respect them
